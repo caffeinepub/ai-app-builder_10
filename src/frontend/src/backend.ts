@@ -103,6 +103,7 @@ export type Time = bigint;
 export interface ProjectInput {
     name: string;
     description: string;
+    outputType: string;
 }
 export interface TransformationInput {
     context: Uint8Array;
@@ -120,11 +121,13 @@ export interface Project {
     createdAt: Time;
     description: string;
     updatedAt: Time;
+    outputType: string;
     generatedHTML: string;
 }
 export interface MessageInput {
     projectId: bigint;
     message: string;
+    imageBase64?: string;
 }
 export interface UserProfile {
     name: string;
@@ -156,13 +159,22 @@ export interface backendInterface {
     getUserProjectIds(): Promise<Array<bigint>>;
     getUserProjects(): Promise<Array<Project>>;
     isCallerAdmin(): Promise<boolean>;
+    saveAiResponse(projectId: bigint, assistantMessage: string): Promise<void>;
     saveCallerUserProfile(profile: UserProfile): Promise<void>;
-    sendMessageToAI(input: MessageInput): Promise<void>;
+    saveJsonApiError(projectId: bigint | null, error: {
+        type: string;
+        message: string;
+    }): Promise<void>;
+    sendMessageToAI(input: MessageInput): Promise<{
+        apiKey: string;
+        requestJson: string;
+        project: Project;
+    }>;
     setApiKey(apiKey: string): Promise<void>;
     transform(input: TransformationInput): Promise<TransformationOutput>;
     updateProject(id: bigint, input: ProjectInput): Promise<void>;
 }
-import type { Message as _Message, Project as _Project, Time as _Time, UserProfile as _UserProfile, UserRole as _UserRole } from "./declarations/backend.did.d.ts";
+import type { Message as _Message, MessageInput as _MessageInput, Project as _Project, Time as _Time, UserProfile as _UserProfile, UserRole as _UserRole } from "./declarations/backend.did.d.ts";
 export class Backend implements backendInterface {
     constructor(private actor: ActorSubclass<_SERVICE>, private _uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, private _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, private processError?: (error: unknown) => never){}
     async _initializeAccessControlWithSecret(arg0: string): Promise<void> {
@@ -347,6 +359,20 @@ export class Backend implements backendInterface {
             return result;
         }
     }
+    async saveAiResponse(arg0: bigint, arg1: string): Promise<void> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.saveAiResponse(arg0, arg1);
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.saveAiResponse(arg0, arg1);
+            return result;
+        }
+    }
     async saveCallerUserProfile(arg0: UserProfile): Promise<void> {
         if (this.processError) {
             try {
@@ -361,18 +387,39 @@ export class Backend implements backendInterface {
             return result;
         }
     }
-    async sendMessageToAI(arg0: MessageInput): Promise<void> {
+    async saveJsonApiError(arg0: bigint | null, arg1: {
+        type: string;
+        message: string;
+    }): Promise<void> {
         if (this.processError) {
             try {
-                const result = await this.actor.sendMessageToAI(arg0);
+                const result = await this.actor.saveJsonApiError(to_candid_opt_n14(this._uploadFile, this._downloadFile, arg0), arg1);
                 return result;
             } catch (e) {
                 this.processError(e);
                 throw new Error("unreachable");
             }
         } else {
-            const result = await this.actor.sendMessageToAI(arg0);
+            const result = await this.actor.saveJsonApiError(to_candid_opt_n14(this._uploadFile, this._downloadFile, arg0), arg1);
             return result;
+        }
+    }
+    async sendMessageToAI(arg0: MessageInput): Promise<{
+        apiKey: string;
+        requestJson: string;
+        project: Project;
+    }> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.sendMessageToAI(to_candid_MessageInput_n15(this._uploadFile, this._downloadFile, arg0));
+                return from_candid_record_n17(this._uploadFile, this._downloadFile, result);
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.sendMessageToAI(to_candid_MessageInput_n15(this._uploadFile, this._downloadFile, arg0));
+            return from_candid_record_n17(this._uploadFile, this._downloadFile, result);
         }
     }
     async setApiKey(arg0: string): Promise<void> {
@@ -449,6 +496,21 @@ function from_candid_record_n11(_uploadFile: (file: ExternalBlob) => Promise<Uin
         role: from_candid_variant_n12(_uploadFile, _downloadFile, value.role)
     };
 }
+function from_candid_record_n17(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: {
+    apiKey: string;
+    requestJson: string;
+    project: _Project;
+}): {
+    apiKey: string;
+    requestJson: string;
+    project: Project;
+} {
+    return {
+        apiKey: value.apiKey,
+        requestJson: value.requestJson,
+        project: from_candid_Project_n7(_uploadFile, _downloadFile, value.project)
+    };
+}
 function from_candid_record_n8(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: {
     id: bigint;
     owner: Principal;
@@ -457,6 +519,7 @@ function from_candid_record_n8(_uploadFile: (file: ExternalBlob) => Promise<Uint
     createdAt: _Time;
     description: string;
     updatedAt: _Time;
+    outputType: string;
     generatedHTML: string;
 }): {
     id: bigint;
@@ -466,6 +529,7 @@ function from_candid_record_n8(_uploadFile: (file: ExternalBlob) => Promise<Uint
     createdAt: Time;
     description: string;
     updatedAt: Time;
+    outputType: string;
     generatedHTML: string;
 } {
     return {
@@ -476,6 +540,7 @@ function from_candid_record_n8(_uploadFile: (file: ExternalBlob) => Promise<Uint
         createdAt: value.createdAt,
         description: value.description,
         updatedAt: value.updatedAt,
+        outputType: value.outputType,
         generatedHTML: value.generatedHTML
     };
 }
@@ -501,8 +566,29 @@ function from_candid_vec_n13(_uploadFile: (file: ExternalBlob) => Promise<Uint8A
 function from_candid_vec_n9(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: Array<_Message>): Array<Message> {
     return value.map((x)=>from_candid_Message_n10(_uploadFile, _downloadFile, x));
 }
+function to_candid_MessageInput_n15(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: MessageInput): _MessageInput {
+    return to_candid_record_n16(_uploadFile, _downloadFile, value);
+}
 function to_candid_UserRole_n1(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: UserRole): _UserRole {
     return to_candid_variant_n2(_uploadFile, _downloadFile, value);
+}
+function to_candid_opt_n14(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: bigint | null): [] | [bigint] {
+    return value === null ? candid_none() : candid_some(value);
+}
+function to_candid_record_n16(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: {
+    projectId: bigint;
+    message: string;
+    imageBase64?: string;
+}): {
+    projectId: bigint;
+    message: string;
+    imageBase64: [] | [string];
+} {
+    return {
+        projectId: value.projectId,
+        message: value.message,
+        imageBase64: value.imageBase64 ? candid_some(value.imageBase64) : candid_none()
+    };
 }
 function to_candid_variant_n2(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: UserRole): {
     admin: null;

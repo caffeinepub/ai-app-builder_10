@@ -21,6 +21,7 @@ export type Time = bigint;
 export interface ProjectInput {
     name: string;
     description: string;
+    outputType: string;
 }
 export interface TransformationInput {
     context: Uint8Array;
@@ -38,11 +39,13 @@ export interface Project {
     createdAt: Time;
     description: string;
     updatedAt: Time;
+    outputType: string;
     generatedHTML: string;
 }
 export interface MessageInput {
     projectId: bigint;
     message: string;
+    imageBase64: string | null;
 }
 export interface UserProfile {
     name: string;
@@ -74,7 +77,7 @@ export interface backendInterface {
     getUserProjects(): Promise<Array<Project>>;
     isCallerAdmin(): Promise<boolean>;
     saveCallerUserProfile(profile: UserProfile): Promise<void>;
-    sendMessageToAI(input: MessageInput): Promise<void>;
+    sendMessageToAI(input: MessageInput): Promise<Project>;
     setApiKey(apiKey: string): Promise<void>;
     transform(input: TransformationInput): Promise<TransformationOutput>;
     updateProject(id: bigint, input: ProjectInput): Promise<void>;

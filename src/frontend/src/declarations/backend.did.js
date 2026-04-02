@@ -16,6 +16,7 @@ export const UserRole = IDL.Variant({
 export const ProjectInput = IDL.Record({
   'name' : IDL.Text,
   'description' : IDL.Text,
+  'outputType' : IDL.Text,
 });
 export const UserProfile = IDL.Record({ 'name' : IDL.Text });
 export const Message = IDL.Record({
@@ -31,11 +32,13 @@ export const Project = IDL.Record({
   'createdAt' : Time,
   'description' : IDL.Text,
   'updatedAt' : Time,
+  'outputType' : IDL.Text,
   'generatedHTML' : IDL.Text,
 });
 export const MessageInput = IDL.Record({
   'projectId' : IDL.Nat,
   'message' : IDL.Text,
+  'imageBase64' : IDL.Opt(IDL.Text),
 });
 export const http_header = IDL.Record({
   'value' : IDL.Text,
@@ -74,8 +77,27 @@ export const idlService = IDL.Service({
   'getUserProjectIds' : IDL.Func([], [IDL.Vec(IDL.Nat)], ['query']),
   'getUserProjects' : IDL.Func([], [IDL.Vec(Project)], ['query']),
   'isCallerAdmin' : IDL.Func([], [IDL.Bool], ['query']),
+  'saveAiResponse' : IDL.Func([IDL.Nat, IDL.Text], [], []),
   'saveCallerUserProfile' : IDL.Func([UserProfile], [], []),
-  'sendMessageToAI' : IDL.Func([MessageInput], [], []),
+  'saveJsonApiError' : IDL.Func(
+      [
+        IDL.Opt(IDL.Nat),
+        IDL.Record({ 'type' : IDL.Text, 'message' : IDL.Text }),
+      ],
+      [],
+      [],
+    ),
+  'sendMessageToAI' : IDL.Func(
+      [MessageInput],
+      [
+        IDL.Record({
+          'apiKey' : IDL.Text,
+          'requestJson' : IDL.Text,
+          'project' : Project,
+        }),
+      ],
+      [],
+    ),
   'setApiKey' : IDL.Func([IDL.Text], [], []),
   'transform' : IDL.Func(
       [TransformationInput],
@@ -96,6 +118,7 @@ export const idlFactory = ({ IDL }) => {
   const ProjectInput = IDL.Record({
     'name' : IDL.Text,
     'description' : IDL.Text,
+    'outputType' : IDL.Text,
   });
   const UserProfile = IDL.Record({ 'name' : IDL.Text });
   const Message = IDL.Record({
@@ -111,11 +134,13 @@ export const idlFactory = ({ IDL }) => {
     'createdAt' : Time,
     'description' : IDL.Text,
     'updatedAt' : Time,
+    'outputType' : IDL.Text,
     'generatedHTML' : IDL.Text,
   });
   const MessageInput = IDL.Record({
     'projectId' : IDL.Nat,
     'message' : IDL.Text,
+    'imageBase64' : IDL.Opt(IDL.Text),
   });
   const http_header = IDL.Record({ 'value' : IDL.Text, 'name' : IDL.Text });
   const http_request_result = IDL.Record({
@@ -151,8 +176,27 @@ export const idlFactory = ({ IDL }) => {
     'getUserProjectIds' : IDL.Func([], [IDL.Vec(IDL.Nat)], ['query']),
     'getUserProjects' : IDL.Func([], [IDL.Vec(Project)], ['query']),
     'isCallerAdmin' : IDL.Func([], [IDL.Bool], ['query']),
+    'saveAiResponse' : IDL.Func([IDL.Nat, IDL.Text], [], []),
     'saveCallerUserProfile' : IDL.Func([UserProfile], [], []),
-    'sendMessageToAI' : IDL.Func([MessageInput], [], []),
+    'saveJsonApiError' : IDL.Func(
+        [
+          IDL.Opt(IDL.Nat),
+          IDL.Record({ 'type' : IDL.Text, 'message' : IDL.Text }),
+        ],
+        [],
+        [],
+      ),
+    'sendMessageToAI' : IDL.Func(
+        [MessageInput],
+        [
+          IDL.Record({
+            'apiKey' : IDL.Text,
+            'requestJson' : IDL.Text,
+            'project' : Project,
+          }),
+        ],
+        [],
+      ),
     'setApiKey' : IDL.Func([IDL.Text], [], []),
     'transform' : IDL.Func(
         [TransformationInput],

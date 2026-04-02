@@ -8,6 +8,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -21,9 +22,12 @@ import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import {
+  AppWindow,
   Clock,
   FolderOpen,
+  Globe,
   Loader2,
+  MonitorPlay,
   Plus,
   Sparkles,
   Trash2,
@@ -37,6 +41,49 @@ import {
   useDeleteProject,
   useGetUserProjects,
 } from "../hooks/useQueries";
+
+type OutputType = "webpage" | "presentation" | "app";
+
+const OUTPUT_TYPE_OPTIONS: {
+  id: OutputType;
+  label: string;
+  icon: React.ComponentType<{ className?: string }>;
+  description: string;
+}[] = [
+  {
+    id: "webpage",
+    label: "Webpage",
+    icon: Globe,
+    description: "Professional website with modern design",
+  },
+  {
+    id: "presentation",
+    label: "Presentation",
+    icon: MonitorPlay,
+    description: "Reveal.js slide deck with animations",
+  },
+  {
+    id: "app",
+    label: "App",
+    icon: AppWindow,
+    description: "Interactive web application",
+  },
+];
+
+function outputTypeLabel(type: string): string {
+  if (type === "webpage") return "Webpage";
+  if (type === "presentation") return "Presentation";
+  if (type === "app") return "App";
+  return type || "App";
+}
+
+function outputTypeColor(type: string): string {
+  if (type === "webpage")
+    return "text-blue-400 bg-blue-400/10 border-blue-400/30";
+  if (type === "presentation")
+    return "text-purple-400 bg-purple-400/10 border-purple-400/30";
+  return "text-cyan bg-primary/10 border-primary/30";
+}
 
 interface Props {
   onOpenProject: (project: Project) => void;
@@ -59,6 +106,7 @@ export default function ProjectsPage({ onOpenProject }: Props) {
   const [showNew, setShowNew] = useState(false);
   const [newName, setNewName] = useState("");
   const [newDesc, setNewDesc] = useState("");
+  const [outputType, setOutputType] = useState<OutputType>("app");
   const [deleteId, setDeleteId] = useState<bigint | null>(null);
 
   const handleCreate = async () => {
@@ -67,10 +115,12 @@ export default function ProjectsPage({ onOpenProject }: Props) {
       await createProject.mutateAsync({
         name: newName.trim(),
         description: newDesc.trim(),
+        outputType,
       });
       setShowNew(false);
       setNewName("");
       setNewDesc("");
+      setOutputType("app");
       toast.success("Project created!");
     } catch (e) {
       toast.error(`Failed to create project: ${e}`);
@@ -184,9 +234,16 @@ export default function ProjectsPage({ onOpenProject }: Props) {
                 </div>
 
                 <div className="flex items-center justify-between mt-auto pt-2 border-t border-border">
-                  <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                    <Clock className="h-3 w-3" />
-                    <span>{formatDate(project.updatedAt)}</span>
+                  <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                      <Clock className="h-3 w-3" />
+                      <span>{formatDate(project.updatedAt)}</span>
+                    </div>
+                    <span
+                      className={`text-[10px] font-medium px-1.5 py-0.5 rounded border ${outputTypeColor(project.outputType)}`}
+                    >
+                      {outputTypeLabel(project.outputType)}
+                    </span>
                   </div>
                   <span className="text-xs text-muted-foreground">
                     {project.conversationHistory.length} messages
@@ -202,14 +259,43 @@ export default function ProjectsPage({ onOpenProject }: Props) {
       <Dialog open={showNew} onOpenChange={setShowNew}>
         <DialogContent
           data-ocid="projects.new.dialog"
-          className="bg-card border-border max-w-md"
+          className="bg-card border-border max-w-lg"
         >
           <DialogHeader>
             <DialogTitle className="text-foreground">
               Create New Project
             </DialogTitle>
           </DialogHeader>
-          <div className="space-y-4 py-2">
+          <div className="space-y-5 py-2">
+            {/* Output type selector */}
+            <div className="space-y-2">
+              <Label className="text-sm text-foreground">Output Type</Label>
+              <div className="grid grid-cols-3 gap-2">
+                {OUTPUT_TYPE_OPTIONS.map((opt) => (
+                  <button
+                    key={opt.id}
+                    type="button"
+                    data-ocid={`projects.new.outputtype.${opt.id}.toggle`}
+                    onClick={() => setOutputType(opt.id)}
+                    className={[
+                      "flex flex-col items-center gap-2 p-3 rounded-xl border text-center transition-all",
+                      outputType === opt.id
+                        ? "border-primary/70 bg-primary/10 text-cyan"
+                        : "border-border bg-muted/30 text-muted-foreground hover:border-border/80 hover:bg-muted/50",
+                    ].join(" ")}
+                  >
+                    <opt.icon className="h-5 w-5" />
+                    <div>
+                      <div className="text-xs font-semibold">{opt.label}</div>
+                      <div className="text-[10px] mt-0.5 leading-tight opacity-70">
+                        {opt.description}
+                      </div>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </div>
+
             <div className="space-y-1.5">
               <Label className="text-sm text-foreground">Project Name</Label>
               <Input

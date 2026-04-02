@@ -1,42 +1,40 @@
 # AI App Builder
 
 ## Current State
-New project. Empty Motoko backend and no frontend yet.
+- App has a dark IDE layout with Projects, Builder, Deploy, Settings views
+- Builder shows AI chat, code editor, and live preview panels
+- Users enter their OpenAI API key in Settings
+- The `sendMessageToAI` backend function currently only stores user messages but does NOT actually call OpenAI — no AI responses are generated
+- No output type selection exists; everything is treated as a generic HTML webpage
+- No image or file upload support in the chat input
 
 ## Requested Changes (Diff)
 
 ### Add
-- AI-powered chat interface where users describe what they want to build
-- Live preview panel rendering generated HTML/CSS/JS in a sandboxed iframe
-- Code editor panel showing AI-generated code (read/edit)
-- Project management: create, list, save, and load projects
-- API key configuration screen for connecting to an LLM (OpenAI-compatible)
-- HTTP outcalls from backend to call external LLM APIs (OpenAI / compatible)
-- Export/download project as a ZIP of HTML+CSS+JS files
-- Authorization so users have their own projects
-- Conversation history stored per project
+- Output type selector when creating a new project: "Webpage", "Presentation" (reveal.js HTML slideshow), "App" (interactive web application)
+- Each output type uses a different, highly detailed AI system prompt optimized for that type
+- Image/file upload button in the chat input — supports drag-and-drop and click-to-upload images (PNG, JPG, GIF, WEBP) which are encoded to base64 and sent to OpenAI vision API
+- Backend actually calls OpenAI GPT-4o (or gpt-4-vision-preview) via HTTP outcall, building the full conversation and returning generated HTML
+- `outputType` field on Project stored as text ("webpage", "presentation", "app")
+- Project cards show the output type badge
+- AI system prompt is rich: instructs the model to produce complete, beautiful, self-contained single-file HTML with embedded CSS/JS tailored to the output type
 
 ### Modify
-- N/A (new project)
+- `sendMessageToAI` backend function: implement real OpenAI API call, return updated project with both user message and AI assistant message appended
+- `createProject` to accept `outputType` field
+- `ProjectInput` type to include `outputType: Text`
+- `Project` type to include `outputType: Text`
+- `MessageInput` to include optional `imageBase64` field for image uploads
+- BuilderPage chat input: add image upload button, show image thumbnails before sending
+- ProjectsPage new project dialog: add output type selection with visual cards
+- Builder center panel header: show output type tag; for presentations show "index.html (Reveal.js)", for apps show "app.html"
 
 ### Remove
-- N/A
+- Nothing removed
 
 ## Implementation Plan
-1. Select components: authorization, http-outcalls, blob-storage
-2. Generate Motoko backend:
-   - Projects CRUD (create, get, list, update, delete)
-   - Messages stored per project (conversation history)
-   - AI proxy: accepts user message + project context, calls LLM via http-outcalls, returns response
-   - Store generated code (HTML/CSS/JS) per project
-   - API key storage per user (encrypted in stable storage)
-3. Build React frontend:
-   - Dark IDE-style layout matching design preview
-   - Left nav rail with icons: Projects, Build, Code, Preview, Settings
-   - Projects panel: list of saved projects, create new
-   - Build view: three-panel layout
-     - Left: AI chat with message history, input box
-     - Center: code editor (Monaco or textarea with syntax highlight)
-     - Right: live preview iframe (srcdoc sandboxed)
-   - Settings: API key input
-   - Export/download button
+1. Update backend Motoko: add `outputType` to Project and ProjectInput, add optional `imageBase64` to MessageInput, implement OpenAI HTTP outcall in `sendMessageToAI` with per-type system prompts, append both user and assistant messages
+2. Update frontend ProjectsPage: add output type selection cards in new project dialog
+3. Update frontend BuilderPage: add image upload (file input + drag-and-drop), thumbnail preview strip, pass imageBase64 to backend call
+4. Update project cards to show output type badge
+5. Update frontend hooks to pass imageBase64 in mutation

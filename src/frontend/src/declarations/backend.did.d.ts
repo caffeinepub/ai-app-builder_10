@@ -15,7 +15,11 @@ export interface Message {
   'role' : { 'user' : null } |
     { 'assistant' : null },
 }
-export interface MessageInput { 'projectId' : bigint, 'message' : string }
+export interface MessageInput {
+  'projectId' : bigint,
+  'message' : string,
+  'imageBase64' : [] | [string],
+}
 export interface Project {
   'id' : bigint,
   'owner' : Principal,
@@ -24,9 +28,14 @@ export interface Project {
   'createdAt' : Time,
   'description' : string,
   'updatedAt' : Time,
+  'outputType' : string,
   'generatedHTML' : string,
 }
-export interface ProjectInput { 'name' : string, 'description' : string }
+export interface ProjectInput {
+  'name' : string,
+  'description' : string,
+  'outputType' : string,
+}
 export type Time = bigint;
 export interface TransformationInput {
   'context' : Uint8Array,
@@ -61,8 +70,16 @@ export interface _SERVICE {
   'getUserProjectIds' : ActorMethod<[], Array<bigint>>,
   'getUserProjects' : ActorMethod<[], Array<Project>>,
   'isCallerAdmin' : ActorMethod<[], boolean>,
+  'saveAiResponse' : ActorMethod<[bigint, string], undefined>,
   'saveCallerUserProfile' : ActorMethod<[UserProfile], undefined>,
-  'sendMessageToAI' : ActorMethod<[MessageInput], undefined>,
+  'saveJsonApiError' : ActorMethod<
+    [[] | [bigint], { 'type' : string, 'message' : string }],
+    undefined
+  >,
+  'sendMessageToAI' : ActorMethod<
+    [MessageInput],
+    { 'apiKey' : string, 'requestJson' : string, 'project' : Project }
+  >,
   'setApiKey' : ActorMethod<[string], undefined>,
   'transform' : ActorMethod<[TransformationInput], TransformationOutput>,
   'updateProject' : ActorMethod<[bigint, ProjectInput], undefined>,

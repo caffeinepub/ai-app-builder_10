@@ -69,11 +69,15 @@ export function useDeleteProject() {
 export function useSendMessageToAI() {
   const { actor } = useActor();
   const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: async (input: MessageInput) => {
+  return useMutation<Project, Error, MessageInput>({
+    mutationFn: async (input: MessageInput): Promise<Project> => {
       if (!actor) throw new Error("Not connected");
-      await actor.sendMessageToAI(input);
-      return actor.getProject(input.projectId);
+      // Backend returns Project directly per the updated interface
+      const result = await (actor.sendMessageToAI(input) as Promise<unknown>);
+      // Handle both direct Project return and wrapped { project } return
+      const project =
+        (result as { project?: Project }).project ?? (result as Project);
+      return project;
     },
     onSuccess: (project: Project) => {
       queryClient.setQueryData(["project", project.id.toString()], project);
