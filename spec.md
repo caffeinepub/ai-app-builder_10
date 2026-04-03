@@ -1,40 +1,42 @@
 # AI App Builder
 
 ## Current State
-- App has a dark IDE layout with Projects, Builder, Deploy, Settings views
-- Builder shows AI chat, code editor, and live preview panels
-- Users enter their OpenAI API key in Settings
-- The `sendMessageToAI` backend function currently only stores user messages but does NOT actually call OpenAI — no AI responses are generated
-- No output type selection exists; everything is treated as a generic HTML webpage
-- No image or file upload support in the chat input
+- Users can enter a single OpenAI API key in Settings
+- The backend stores one API key per user (keyed to their Principal)
+- The `sendMessageToAI` function exclusively calls OpenAI's GPT-4o model
+- Settings page only shows an OpenAI API key input
 
 ## Requested Changes (Diff)
 
 ### Add
-- Output type selector when creating a new project: "Webpage", "Presentation" (reveal.js HTML slideshow), "App" (interactive web application)
-- Each output type uses a different, highly detailed AI system prompt optimized for that type
-- Image/file upload button in the chat input — supports drag-and-drop and click-to-upload images (PNG, JPG, GIF, WEBP) which are encoded to base64 and sent to OpenAI vision API
-- Backend actually calls OpenAI GPT-4o (or gpt-4-vision-preview) via HTTP outcall, building the full conversation and returning generated HTML
-- `outputType` field on Project stored as text ("webpage", "presentation", "app")
-- Project cards show the output type badge
-- AI system prompt is rich: instructs the model to produce complete, beautiful, self-contained single-file HTML with embedded CSS/JS tailored to the output type
+- Support for multiple AI provider API keys per user: OpenAI, Anthropic (Claude), and Google (Gemini)
+- Backend stores separate API keys per provider per user
+- AI provider selection in the Settings page (select active provider)
+- Settings page now shows three separate API key input fields (one per provider)
+- Active provider selector stored in backend per user
+- Backend routes `sendMessageToAI` calls to the selected provider's API endpoint
 
 ### Modify
-- `sendMessageToAI` backend function: implement real OpenAI API call, return updated project with both user message and AI assistant message appended
-- `createProject` to accept `outputType` field
-- `ProjectInput` type to include `outputType: Text`
-- `Project` type to include `outputType: Text`
-- `MessageInput` to include optional `imageBase64` field for image uploads
-- BuilderPage chat input: add image upload button, show image thumbnails before sending
-- ProjectsPage new project dialog: add output type selection with visual cards
-- Builder center panel header: show output type tag; for presentations show "index.html (Reveal.js)", for apps show "app.html"
+- Backend: `setApiKey` / `getApiKey` replaced with `setProviderApiKey(provider, key)` / `getProviderApiKeys()` / `setActiveProvider(provider)` / `getActiveProvider()`
+- `sendMessageToAI` checks active provider and routes to correct API (OpenAI, Anthropic, or Google Gemini)
+- Settings page: redesigned to show all three providers with individual key inputs + active provider radio/toggle
+- `MessageInput` optionally carries provider override (or rely on stored active provider)
+- `backend.d.ts` updated to reflect new API shape
 
 ### Remove
-- Nothing removed
+- Single `setApiKey` / `getApiKey` pattern (replaced by per-provider pattern)
 
 ## Implementation Plan
-1. Update backend Motoko: add `outputType` to Project and ProjectInput, add optional `imageBase64` to MessageInput, implement OpenAI HTTP outcall in `sendMessageToAI` with per-type system prompts, append both user and assistant messages
-2. Update frontend ProjectsPage: add output type selection cards in new project dialog
-3. Update frontend BuilderPage: add image upload (file input + drag-and-drop), thumbnail preview strip, pass imageBase64 to backend call
-4. Update project cards to show output type badge
-5. Update frontend hooks to pass imageBase64 in mutation
+1. Update `main.mo`:
+   - Add `apiKeysByProvider` map: `Map<Principal, Map<Text, Text>>` (principal -> provider -> key)
+   - Add `activeProvider` map: `Map<Principal, Text>` (principal -> "openai" | "anthropic" | "google")
+   - Add `setProviderApiKey(provider: Text, key: Text)` update function
+   - Add `getProviderApiKeys()` query returns `{openai: ?Text, anthropic: ?Text, google: ?Text}`
+   - Add `setActiveProvider(provider: Text)` update function
+   - Add `getActiveProvider()` query returns `?Text`
+   - Keep backward-compat `setApiKey` / `getApiKey` mapping to OpenAI provider
+   - Route `sendMessageToAI` based on active provider: OpenAI uses existing logic, Anthropic calls `https://api.anthropic.com/v1/messages`, Google calls `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent`
+2. Regenerate `backend.d.ts` bindings for new API shape
+3. Update `useQueries.ts` to add hooks for new provider key functions
+4. Update `SettingsPage.tsx` to show three provider cards with individual inputs + active provider selection
+5. Validate and build

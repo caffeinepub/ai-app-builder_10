@@ -54,6 +54,11 @@ export interface http_header {
     value: string;
     name: string;
 }
+export interface ProviderApiKeys {
+    openai: string | null;
+    anthropic: string | null;
+    google: string | null;
+}
 export enum UserRole {
     admin = "admin",
     user = "user",
@@ -81,4 +86,9 @@ export interface backendInterface {
     setApiKey(apiKey: string): Promise<void>;
     transform(input: TransformationInput): Promise<TransformationOutput>;
     updateProject(id: bigint, input: ProjectInput): Promise<void>;
+    // Multi-provider API key management
+    setProviderApiKey(provider: string, apiKey: string): Promise<void>;
+    getProviderApiKeys(): Promise<ProviderApiKeys>;
+    setActiveProvider(provider: string): Promise<void>;
+    getActiveProvider(): Promise<string | null>;
 }

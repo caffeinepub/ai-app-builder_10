@@ -99,3 +99,64 @@ export function useSetApiKey() {
     },
   });
 }
+
+export function useGetProviderApiKeys() {
+  const { actor, isFetching } = useActor();
+  return useQuery<{
+    openai: string | null;
+    anthropic: string | null;
+    google: string | null;
+  }>({
+    queryKey: ["providerApiKeys"],
+    queryFn: async () => {
+      if (!actor) return { openai: null, anthropic: null, google: null };
+      // Cast to any: these methods are present at runtime but not in the generated TS interface
+      return (actor as any).getProviderApiKeys();
+    },
+    enabled: !!actor && !isFetching,
+  });
+}
+
+export function useSetProviderApiKey() {
+  const { actor } = useActor();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      provider,
+      apiKey,
+    }: { provider: string; apiKey: string }) => {
+      if (!actor) throw new Error("Not connected");
+      return (actor as any).setProviderApiKey(provider, apiKey);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["providerApiKeys"] });
+      queryClient.invalidateQueries({ queryKey: ["apiKey"] });
+    },
+  });
+}
+
+export function useGetActiveProvider() {
+  const { actor, isFetching } = useActor();
+  return useQuery<string | null>({
+    queryKey: ["activeProvider"],
+    queryFn: async () => {
+      if (!actor) return null;
+      return (actor as any).getActiveProvider();
+    },
+    enabled: !!actor && !isFetching,
+  });
+}
+
+export function useSetActiveProvider() {
+  const { actor } = useActor();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (provider: string) => {
+      if (!actor) throw new Error("Not connected");
+      return (actor as any).setActiveProvider(provider);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["activeProvider"] });
+    },
+  });
+}

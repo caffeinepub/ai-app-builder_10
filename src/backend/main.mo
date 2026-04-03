@@ -6,12 +6,12 @@ import Time "mo:core/Time";
 import Runtime "mo:core/Runtime";
 import Principal "mo:core/Principal";
 import Text "mo:core/Text";
-import Migration "migration";
+
 import OutCall "http-outcalls/outcall";
 import MixinAuthorization "authorization/MixinAuthorization";
 import AccessControl "authorization/access-control";
 
-(with migration = Migration.run)
+
 actor {
   // Types
   type Message = {
@@ -51,12 +51,24 @@ actor {
     imageBase64 : ?Text;
   };
 
+  public type ProviderApiKeys = {
+    openai : ?Text;
+    anthropic : ?Text;
+    google : ?Text;
+  };
+
   // State
   let accessControlState = AccessControl.initState();
   include MixinAuthorization(accessControlState);
 
   let projects = Map.empty<Nat, Project>();
+  // Legacy single-key store (openai)
   let apiKeys = Map.empty<Principal, Text>();
+  // Per-provider key stores
+  let anthropicKeys = Map.empty<Principal, Text>();
+  let googleKeys = Map.empty<Principal, Text>();
+  // Active provider per user
+  let activeProviders = Map.empty<Principal, Text>();
   let userProfiles = Map.empty<Principal, UserProfile>();
   var nextProjectId = 0;
 
@@ -101,7 +113,7 @@ actor {
     result;
   };
 
-  func buildMessagesJson(history : [Message], systemPrompt : Text) : Text {
+  func buildOpenAIMessagesJson(history : [Message], systemPrompt : Text) : Text {
     var msgs = "[{\"role\":\"system\",\"content\":\"" # escapeJson(systemPrompt) # "\"}";
     for (msg in history.vals()) {
       let roleStr = switch (msg.role) {
@@ -113,12 +125,43 @@ actor {
     msgs # "]";
   };
 
+  func buildAnthropicMessagesJson(history : [Message]) : Text {
+    var msgs = "[";
+    var first = true;
+    for (msg in history.vals()) {
+      let roleStr = switch (msg.role) {
+        case (#user) { "user" };
+        case (#assistant) { "assistant" };
+      };
+      if (not first) { msgs #= "," };
+      msgs #= "{\"role\":\"" # roleStr # "\",\"content\":\"" # escapeJson(msg.content) # "\"}";
+      first := false;
+    };
+    msgs # "]";
+  };
+
+  func buildGeminiContentsJson(history : [Message]) : Text {
+    var contents = "[";
+    var first = true;
+    for (msg in history.vals()) {
+      // Gemini uses "user" and "model" (not "assistant")
+      let roleStr = switch (msg.role) {
+        case (#user) { "user" };
+        case (#assistant) { "model" };
+      };
+      if (not first) { contents #= "," };
+      contents #= "{\"role\":\"" # roleStr # "\",\"parts\":[{\"text\":\"" # escapeJson(msg.content) # "\"}]}";
+      first := false;
+    };
+    contents # "]";
+  };
+
   // Extract assistant content from OpenAI JSON response
-  func extractAssistantContent(responseText : Text) : Text {
+  func extractOpenAIContent(responseText : Text) : Text {
     let contentMarker = "\"content\":\"";
     let parts = responseText.split(#text(contentMarker)).toArray();
     if (parts.size() < 2) {
-      return "Error: Could not parse AI response";
+      return "Error: Could not parse OpenAI response";
     };
     let lastPart = parts[parts.size() - 1];
     var result = "";
@@ -141,7 +184,73 @@ actor {
         };
       };
     };
-    if (result == "") { "Error: Empty AI response" } else { result };
+    if (result == "") { "Error: Empty OpenAI response" } else { result };
+  };
+
+  // Extract content from Anthropic response: .content[0].text
+  func extractAnthropicContent(responseText : Text) : Text {
+    let textMarker = "\"text\":\"";
+    let parts = responseText.split(#text(textMarker)).toArray();
+    if (parts.size() < 2) {
+      return "Error: Could not parse Anthropic response";
+    };
+    let afterText = parts[1];
+    var result = "";
+    var escaped = false;
+    var done = false;
+    for (c in afterText.chars()) {
+      if (not done) {
+        if (escaped) {
+          if (c == 'n') { result #= "\n" }
+          else if (c == 't') { result #= "\t" }
+          else if (c == 'r') { result #= "\r" }
+          else { result #= Text.fromChar(c) };
+          escaped := false;
+        } else if (c == '\\') {
+          escaped := true;
+        } else if (c == '\"') {
+          done := true;
+        } else {
+          result #= Text.fromChar(c);
+        };
+      };
+    };
+    if (result == "") { "Error: Empty Anthropic response" } else { result };
+  };
+
+  // Extract content from Gemini response: .candidates[0].content.parts[0].text
+  func extractGeminiContent(responseText : Text) : Text {
+    let textMarker = "\"text\": \"";
+    let textMarker2 = "\"text\":\"";
+    var parts = responseText.split(#text(textMarker)).toArray();
+    if (parts.size() < 2) {
+      parts := responseText.split(#text(textMarker2)).toArray();
+    };
+    if (parts.size() < 2) {
+      return "Error: Could not parse Gemini response";
+    };
+    let afterText = parts[1];
+    var result = "";
+    var escaped = false;
+    var done = false;
+    for (c in afterText.chars()) {
+      if (not done) {
+        if (escaped) {
+          if (c == 'n') { result #= "\n" }
+          else if (c == 't') { result #= "\t" }
+          else if (c == 'r') { result #= "\r" }
+          else { result #= Text.fromChar(c) };
+          escaped := false;
+        } else if (c == '\\') {
+          escaped := true;
+        } else if (c == '\"') {
+          done := true;
+        } else {
+          result #= Text.fromChar(c);
+        };
+      };
+    };
+    if (result == "") { "Error: Empty Gemini response" } else { result };
   };
 
   // User Profile Functions
@@ -226,7 +335,7 @@ actor {
     projects.values().toArray().filter(func(p) { p.owner == caller }).sort();
   };
 
-  // API Key Management
+  // Legacy API Key (OpenAI backward compat)
   public shared ({ caller }) func setApiKey(apiKey : Text) : async () {
     if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
       Runtime.trap("Unauthorized");
@@ -241,7 +350,50 @@ actor {
     apiKeys.get(caller);
   };
 
-  // AI Chat - makes actual HTTP outcall to OpenAI
+  // Multi-provider API Key Management
+  public shared ({ caller }) func setProviderApiKey(provider : Text, apiKey : Text) : async () {
+    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
+      Runtime.trap("Unauthorized");
+    };
+    switch (provider) {
+      case ("openai") { apiKeys.add(caller, apiKey) };
+      case ("anthropic") { anthropicKeys.add(caller, apiKey) };
+      case ("google") { googleKeys.add(caller, apiKey) };
+      case _ { Runtime.trap("Unknown provider: " # provider) };
+    };
+  };
+
+  public query ({ caller }) func getProviderApiKeys() : async ProviderApiKeys {
+    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
+      Runtime.trap("Unauthorized");
+    };
+    {
+      openai = apiKeys.get(caller);
+      anthropic = anthropicKeys.get(caller);
+      google = googleKeys.get(caller);
+    };
+  };
+
+  public shared ({ caller }) func setActiveProvider(provider : Text) : async () {
+    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
+      Runtime.trap("Unauthorized");
+    };
+    switch (provider) {
+      case ("openai" or "anthropic" or "google") {
+        activeProviders.add(caller, provider);
+      };
+      case _ { Runtime.trap("Unknown provider: " # provider) };
+    };
+  };
+
+  public query ({ caller }) func getActiveProvider() : async ?Text {
+    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
+      Runtime.trap("Unauthorized");
+    };
+    activeProviders.get(caller);
+  };
+
+  // AI Chat - routes to correct provider
   public shared ({ caller }) func sendMessageToAI(input : MessageInput) : async Project {
     if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
       Runtime.trap("Unauthorized");
@@ -249,11 +401,9 @@ actor {
     let project = getProjectInternal(input.projectId);
     ensureProjectOwner(project, caller);
 
-    let apiKey = switch (apiKeys.get(caller)) {
-      case (null) {
-        Runtime.trap("No API key found. Please go to Settings and add your OpenAI API key.");
-      };
-      case (?k) { k };
+    let provider = switch (activeProviders.get(caller)) {
+      case (null) { "openai" };
+      case (?p) { p };
     };
 
     // Build user message content
@@ -272,23 +422,65 @@ actor {
       updatedAt = Time.now();
     });
 
-    // Build OpenAI request
     let systemPrompt = getSystemPrompt(project.outputType);
-    let messagesJson = buildMessagesJson(updatedHistory, systemPrompt);
-    let requestBody = "{\"model\":\"gpt-4o\",\"max_tokens\":16000,\"messages\":" # messagesJson # "}";
 
-    let extraHeaders : [OutCall.Header] = [
-      { name = "Authorization"; value = "Bearer " # apiKey },
-    ];
-
-    let responseText = await OutCall.httpPostRequest(
-      "https://api.openai.com/v1/chat/completions",
-      extraHeaders,
-      requestBody,
-      transform,
-    );
-
-    let assistantContent = extractAssistantContent(responseText);
+    let assistantContent = switch (provider) {
+      case ("anthropic") {
+        let apiKey = switch (anthropicKeys.get(caller)) {
+          case (null) { Runtime.trap("No Anthropic API key found. Please add your Anthropic API key in Settings.") };
+          case (?k) { k };
+        };
+        let messagesJson = buildAnthropicMessagesJson(updatedHistory);
+        let requestBody = "{\"model\":\"claude-opus-4-5\",\"max_tokens\":16000,\"system\":\"" # escapeJson(systemPrompt) # "\",\"messages\":" # messagesJson # "}";
+        let extraHeaders : [OutCall.Header] = [
+          { name = "x-api-key"; value = apiKey },
+          { name = "anthropic-version"; value = "2023-06-01" },
+        ];
+        let responseText = await OutCall.httpPostRequest(
+          "https://api.anthropic.com/v1/messages",
+          extraHeaders,
+          requestBody,
+          transform,
+        );
+        extractAnthropicContent(responseText);
+      };
+      case ("google") {
+        let apiKey = switch (googleKeys.get(caller)) {
+          case (null) { Runtime.trap("No Google API key found. Please add your Google API key in Settings.") };
+          case (?k) { k };
+        };
+        let contentsJson = buildGeminiContentsJson(updatedHistory);
+        let requestBody = "{\"system_instruction\":{\"parts\":[{\"text\":\"" # escapeJson(systemPrompt) # "\"}]},\"contents\":" # contentsJson # "}";
+        let url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro:generateContent?key=" # apiKey;
+        let extraHeaders : [OutCall.Header] = [];
+        let responseText = await OutCall.httpPostRequest(
+          url,
+          extraHeaders,
+          requestBody,
+          transform,
+        );
+        extractGeminiContent(responseText);
+      };
+      case _ {
+        // Default: OpenAI
+        let apiKey = switch (apiKeys.get(caller)) {
+          case (null) { Runtime.trap("No OpenAI API key found. Please go to Settings and add your OpenAI API key.") };
+          case (?k) { k };
+        };
+        let messagesJson = buildOpenAIMessagesJson(updatedHistory, systemPrompt);
+        let requestBody = "{\"model\":\"gpt-4o\",\"max_tokens\":16000,\"messages\":" # messagesJson # "}";
+        let extraHeaders : [OutCall.Header] = [
+          { name = "Authorization"; value = "Bearer " # apiKey },
+        ];
+        let responseText = await OutCall.httpPostRequest(
+          "https://api.openai.com/v1/chat/completions",
+          extraHeaders,
+          requestBody,
+          transform,
+        );
+        extractOpenAIContent(responseText);
+      };
+    };
 
     let assistantMessage : Message = { role = #assistant; content = assistantContent };
     let finalHistory = updatedHistory.concat([assistantMessage]);
